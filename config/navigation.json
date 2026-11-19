@@ -1,0 +1,270 @@
+{
+  "version": 1,
+  "recognitionConfidence": 0.30,
+  "commands": [
+    {
+      "action": "Open",
+      "phrases": [
+        "open {target}",
+        "launch {target}",
+        "start {target}",
+        "please open {target}",
+        "{target} open pannu",
+        "open"
+      ]
+    },
+    {
+      "action": "Close",
+      "phrases": [
+        "close {target}",
+        "exit {target}",
+        "{target} close pannu",
+        "close",
+        "exit",
+        "close this",
+        "close this window"
+      ]
+    },
+    {
+      "action": "Minimize",
+      "phrases": [
+        "minimize {target}",
+        "minimise {target}",
+        "minimize",
+        "minimize this",
+        "minimize this window"
+      ]
+    },
+    {
+      "action": "Maximize",
+      "phrases": [
+        "maximize {target}",
+        "maximise {target}",
+        "maximize",
+        "maximize this",
+        "maximize this window"
+      ]
+    },
+    {
+      "action": "Restore",
+      "phrases": [
+        "restore {target}",
+        "restore",
+        "restore this window"
+      ]
+    },
+    {
+      "action": "NextTab",
+      "phrases": [
+        "next tab",
+        "switch to next tab"
+      ]
+    },
+    {
+      "action": "PreviousTab",
+      "phrases": [
+        "previous tab",
+        "switch to previous tab"
+      ]
+    },
+    {
+      "action": "Back",
+      "phrases": [
+        "back",
+        "go back",
+        "back pannu"
+      ]
+    },
+    {
+      "action": "Forward",
+      "phrases": [
+        "forward",
+        "go forward",
+        "forward pannu"
+      ]
+    },
+    {
+      "action": "NextPage",
+      "phrases": [
+        "next page"
+      ]
+    }
+  ],
+  "targetAliases": {
+    "note pad": "Notepad",
+    "vs code": "Visual Studio Code",
+    "chrome": "Google Chrome"
+  },
+  "ignoredTargetWords": [
+    "the",
+    "and",
+    "for",
+    "with",
+    "windows",
+    "microsoft",
+    "google",
+    "app",
+    "application",
+    "version"
+  ],
+  "systemTargets": [
+    {
+      "key": "home",
+      "name": "Windows Settings",
+      "uri": "ms-settings:",
+      "aliases": [
+        "settings",
+        "system settings"
+      ]
+    },
+    {
+      "key": "bluetooth",
+      "name": "Bluetooth settings",
+      "uri": "ms-settings:bluetooth",
+      "aliases": [
+        "bluetooth"
+      ]
+    },
+    {
+      "key": "wifi",
+      "name": "Wi-Fi settings",
+      "uri": "ms-settings:network-wifi",
+      "aliases": [
+        "wifi",
+        "wi fi",
+        "wifi settings"
+      ]
+    },
+    {
+      "key": "network",
+      "name": "Network settings",
+      "uri": "ms-settings:network-status",
+      "aliases": [
+        "network",
+        "network and internet"
+      ]
+    },
+    {
+      "key": "sound",
+      "name": "Sound settings",
+      "uri": "ms-settings:sound",
+      "aliases": [
+        "sound",
+        "audio settings"
+      ]
+    },
+    {
+      "key": "display",
+      "name": "Display settings",
+      "uri": "ms-settings:display",
+      "aliases": [
+        "display",
+        "screen settings"
+      ]
+    },
+    {
+      "key": "updates",
+      "name": "Windows Update",
+      "uri": "ms-settings:windowsupdate",
+      "aliases": [
+        "updates",
+        "update settings"
+      ]
+    },
+    {
+      "key": "apps",
+      "name": "Installed apps settings",
+      "uri": "ms-settings:appsfeatures",
+      "aliases": [
+        "installed apps",
+        "apps settings"
+      ]
+    },
+    {
+      "key": "defaultapps",
+      "name": "Default apps settings",
+      "uri": "ms-settings:defaultapps",
+      "aliases": [
+        "default apps"
+      ]
+    },
+    {
+      "key": "privacy",
+      "name": "Privacy settings",
+      "uri": "ms-settings:privacy",
+      "aliases": [
+        "privacy"
+      ]
+    },
+    {
+      "key": "microphone",
+      "name": "Microphone privacy settings",
+      "uri": "ms-settings:privacy-microphone",
+      "aliases": [
+        "microphone settings",
+        "microphone permissions"
+      ]
+    },
+    {
+      "key": "taskbar",
+      "name": "Taskbar settings",
+      "uri": "ms-settings:taskbar",
+      "aliases": [
+        "taskbar"
+      ]
+    },
+    {
+      "key": "about",
+      "name": "About this PC",
+      "uri": "ms-settings:about",
+      "aliases": [
+        "about pc",
+        "about this computer"
+      ]
+    }
+  ],
+  "browserProcesses": [
+    "chrome",
+    "msedge",
+    "brave",
+    "firefox",
+    "opera",
+    "vivaldi"
+  ],
+  "shortcuts": {
+    "NextTab": [
+      "CTRL",
+      "TAB"
+    ],
+    "PreviousTab": [
+      "CTRL",
+      "SHIFT",
+      "TAB"
+    ],
+    "Back": [
+      "ALT",
+      "LEFT"
+    ],
+    "Forward": [
+      "ALT",
+      "RIGHT"
+    ]
+  },
+  "confirmations": {
+    "Open": "Opened{address}.",
+    "Close": "Closed{address}.",
+    "CloseRequested": "Close requested{address}. Save the file if the application asks.",
+    "Minimize": "Minimized{address}.",
+    "Maximize": "Maximized{address}.",
+    "Restore": "Restored{address}.",
+    "WindowRequested": "Window action requested{address}.",
+    "NextTab": "Done{address}.",
+    "PreviousTab": "Done{address}.",
+    "Back": "Done{address}.",
+    "Forward": "Done{address}.",
+    "WhichApplication": "Which application should I open{address}?",
+    "Choose": "Which one{address}?",
+    "Cancelled": "Cancelled{address}.",
+    "NotFound": "I couldn't find {target}{address}. Use its Start menu name or add an alias in navigation settings."
+  }
+}

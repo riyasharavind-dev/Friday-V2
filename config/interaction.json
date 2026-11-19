@@ -1,0 +1,13 @@
+{
+  "wakePhrases": ["hey friday", "hi friday", "hello friday", "friday"],
+  "interruptRequests": ["stop", "stop talking", "stop speaking", "wait", "hold on", "cancel", "be quiet"],
+  "interruptPhrases": ["hold on friday"],
+  "confirmRequests": ["confirm", "yes confirm"],
+  "confirmBeforeVoiceOpen": ["command prompt", "cmd", "powershell", "terminal", "registry editor"],
+  "followUpSeconds": 15,
+  "localDeadlineMilliseconds": 2000,
+  "confirmationSeconds": 10,
+  "commandConfidence": 0.80,
+  "targetWordConfidence": 0.65,
+  "wakeConfidence": 0.40
+}

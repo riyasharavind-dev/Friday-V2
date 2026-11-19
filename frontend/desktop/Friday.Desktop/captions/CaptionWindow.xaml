@@ -1,0 +1,39 @@
+<Window x:Class="Friday.Desktop.Captions.CaptionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="FRIDAY Captions"
+        Width="900"
+        Height="64"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Focusable="False"
+        WindowStartupLocation="Manual"
+        Loaded="Window_Loaded">
+
+    <Grid Margin="24,14"
+          Background="{x:Null}">
+
+        <TextBlock x:Name="CaptionText"
+                   FontFamily="Segoe UI"
+                   FontSize="18"
+                   FontWeight="Medium"
+                   Foreground="White"
+                   TextWrapping="NoWrap"
+                   TextAlignment="Center"
+                   VerticalAlignment="Center"
+                   HorizontalAlignment="Stretch">
+
+            <TextBlock.Effect>
+                <DropShadowEffect Color="Black"
+                                  BlurRadius="4"
+                                  ShadowDepth="1"
+                                  Opacity="0.9"/>
+            </TextBlock.Effect>
+        </TextBlock>
+    </Grid>
+</Window>

@@ -1,0 +1,29 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Build output
+**/bin/
+**/obj/
+.vs/
+
+# Local persistent FRIDAY preferences
+/data/database/
+
+# Local caches (may contain provider tokens)
+/data/cache/
+
+# Python virtual environment (voice experiments)
+backend/engines/voice/.venv/
+
+# Python caches
+**/__pycache__/
+*.pyc
+
+# Model download caches
+models/**/.cache/
+
+# OS junk
+Thumbs.db
+desktop.ini
