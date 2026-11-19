@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -43,17 +44,35 @@ public sealed class GroqAiProvider : IAiProvider
                 "Groq API key or model is missing.");
         }
 
-        var messages = request.Messages.Select(message => new
-        {
-            role = message.Role switch
+        var messages = request.Messages.Select(ToGroqMessage).ToArray();
+
+        var tools = request.Tools is { Count: > 0 }
+            ? request.Tools.Select(tool => new
             {
-                ChatRole.System => "system",
-                ChatRole.User => "user",
-                ChatRole.Assistant => "assistant",
-                _ => throw new ArgumentOutOfRangeException()
-            },
-            content = message.Content
-        }).ToArray();
+                type = "function",
+                function = new
+                {
+                    name = tool.Name,
+                    description = tool.Description,
+                    parameters = JsonSerializer.Deserialize<JsonElement>(
+                        tool.ParametersJson)
+                }
+            }).ToArray()
+            : null;
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = _model,
+            ["messages"] = messages,
+            ["max_completion_tokens"] = 2048,
+            ["stream"] = false
+        };
+
+        if (tools is not null)
+        {
+            payload["tools"] = tools;
+            payload["tool_choice"] = "auto";
+        }
 
         using var httpRequest = new HttpRequestMessage(
             HttpMethod.Post,
@@ -62,13 +81,7 @@ public sealed class GroqAiProvider : IAiProvider
         httpRequest.Headers.Authorization =
             new AuthenticationHeaderValue("Bearer", _apiKey);
 
-        httpRequest.Content = JsonContent.Create(new
-        {
-            model = _model,
-            messages,
-            max_completion_tokens = 1024,
-            stream = false
-        });
+        httpRequest.Content = JsonContent.Create(payload);
 
         using var response = await _httpClient.SendAsync(
             httpRequest,
@@ -109,20 +122,90 @@ public sealed class GroqAiProvider : IAiProvider
 
         var messageElement = choices[0].GetProperty("message");
 
-        if (!messageElement.TryGetProperty("content", out var content))
-        {
-            throw new InvalidOperationException(
-                "Groq returned no text content.");
-        }
+        string text = messageElement.TryGetProperty("content", out var content) &&
+            content.ValueKind == JsonValueKind.String
+            ? content.GetString() ?? ""
+            : "";
 
-        string? text = content.GetString();
+        var toolCalls = ReadToolCalls(messageElement);
 
-        if (string.IsNullOrWhiteSpace(text))
+        if (string.IsNullOrWhiteSpace(text) && toolCalls.Count == 0)
         {
             throw new InvalidOperationException(
                 "Groq returned an empty response.");
         }
 
-        return new AiResponse(text, Id, _model);
+        return new AiResponse(
+            text,
+            Id,
+            _model,
+            toolCalls.Count == 0 ? null : toolCalls);
+    }
+
+    private static object ToGroqMessage(ChatMessage message) => message.Role switch
+    {
+        ChatRole.System => new { role = "system", content = message.Content },
+        ChatRole.User => new { role = "user", content = message.Content },
+        ChatRole.Tool => new
+        {
+            role = "tool",
+            tool_call_id = message.ToolCallId ?? "",
+            content = message.Content
+        },
+        ChatRole.Assistant when message.ToolCalls is { Count: > 0 } => new
+        {
+            role = "assistant",
+            content = string.IsNullOrEmpty(message.Content)
+                ? null
+                : message.Content,
+            tool_calls = message.ToolCalls.Select(call => new
+            {
+                id = call.Id,
+                type = "function",
+                function = new
+                {
+                    name = call.Name,
+                    arguments = call.ArgumentsJson
+                }
+            }).ToArray()
+        },
+        ChatRole.Assistant => new { role = "assistant", content = message.Content },
+        _ => throw new ArgumentOutOfRangeException(nameof(message))
+    };
+
+    private static List<AiToolCall> ReadToolCalls(JsonElement messageElement)
+    {
+        var result = new List<AiToolCall>();
+        if (!messageElement.TryGetProperty("tool_calls", out var toolCalls) ||
+            toolCalls.ValueKind != JsonValueKind.Array)
+            return result;
+
+        foreach (var item in toolCalls.EnumerateArray())
+        {
+            if (!item.TryGetProperty("function", out var function))
+                continue;
+
+            string name = function.TryGetProperty("name", out var nameElement) &&
+                nameElement.ValueKind == JsonValueKind.String
+                ? nameElement.GetString() ?? ""
+                : "";
+
+            if (name.Length == 0) continue;
+
+            string id = item.TryGetProperty("id", out var idElement) &&
+                idElement.ValueKind == JsonValueKind.String
+                ? idElement.GetString() ?? ""
+                : "";
+
+            string arguments =
+                function.TryGetProperty("arguments", out var argsElement) &&
+                argsElement.ValueKind == JsonValueKind.String
+                ? argsElement.GetString() ?? "{}"
+                : "{}";
+
+            result.Add(new AiToolCall(id, name, arguments));
+        }
+
+        return result;
     }
 }

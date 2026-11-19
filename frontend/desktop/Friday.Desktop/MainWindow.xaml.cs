@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
+using Friday.Contracts;
 using Friday.Core;
 using Friday.Core.Configuration;
 using Friday.Core.Interaction;
@@ -38,7 +39,7 @@ public partial class MainWindow : Window
     private bool _ready, _busy, _speaking, _paused, _closing;
     private long _conversationUntil;
     private PendingConfirmation? _confirmation;
-    private sealed record PendingConfirmation(string Text, NavigationCommandContext Context, long ExpiresAt);
+    private sealed record PendingConfirmation(string Phrase, NavigationCommandContext Context, long ExpiresAt);
     private bool Conversing => Environment.TickCount64 < _conversationUntil;
 
     public MainWindow()
@@ -47,14 +48,15 @@ public partial class MainWindow : Window
         EnvFileLoader.Load();
         _config = NavigationConfiguration.Load();
         _options = InteractionOptions.Load();
-        _router = new(_config, _options);
+        _router = new(_options);
         _executor = new(_config);
         var store = new SqlitePreferenceStore(PreferencePaths.GetDatabasePath());
         _preferences = new(store);
         var provider = new GroqAiProvider(_http,
             Environment.GetEnvironmentVariable("FRIDAY_GROQ_API_KEY") ?? "",
             Environment.GetEnvironmentVariable("FRIDAY_GROQ_MODEL") ?? "openai/gpt-oss-20b");
-        // Navigation is routed before the assistant. The model cannot execute Windows actions.
+        // The assistant interprets every request and drives navigation through
+        // desktop tools; execution stays inside FRIDAY.
         _assistant = new FridayAssistant(provider, store);
         string database = Path.Combine(Path.GetDirectoryName(PreferencePaths.GetDatabasePath())!, "local-navigation.db");
         _navigation = new(_executor, new SqliteNavigationRecipeStore(database), _config,
@@ -75,7 +77,7 @@ public partial class MainWindow : Window
         ToolTip = "Starting FRIDAY voice…";
         try
         {
-            VoiceTrace.Write("=== Hybrid FRIDAY startup: local actions + addressed API chat ===");
+            VoiceTrace.Write("=== FRIDAY startup: API agent with desktop tools ===");
             _targets = await _executor.ListTargetsAsync(false, _shutdown.Token);
             var commands = new LocalNavigationListener(_config, _targets, _options, () => _executor.CaptureContext(allowRemembered: false));
             _commands = commands;
@@ -90,7 +92,7 @@ public partial class MainWindow : Window
         catch (Exception error)
         {
             DisableLocalVoice();
-            ShowOutputPanel("Voice unavailable", error.Message + "\n\nTyped local commands and API chat are still available.");
+            ShowOutputPanel("Voice unavailable", error.Message + "\n\nTyped requests and API chat are still available.");
         }
     }
 
@@ -145,10 +147,6 @@ public partial class MainWindow : Window
         if (_closing) throw new OperationCanceledException();
         if (_paused) return "FRIDAY is paused. Click Play to resume.";
         var route = _router.Route(text, typed, Conversing, _busy);
-        if (route.Kind is InputKind.Ignore or InputKind.Question && !_busy && _navigation.IsAwaitingChoice
-            && (NavigationParser.Match(_targets, _config.ResolveAlias(route.Text)).Count > 0
-                || NavigationParser.Normalize(route.Text) is "cancel" or "never mind"))
-            route = new(InputKind.Local, route.Text, route.Addressed);
         if (route.Kind == InputKind.Ignore) return "";
         bool continueConversation = route.Addressed || Conversing || (typed && route.Kind == InputKind.Question);
         if (route.Kind == InputKind.Interrupt)
@@ -157,22 +155,18 @@ public partial class MainWindow : Window
             _panel?.SetOutput("FRIDAY", "Stopped.");
             return "Stopped.";
         }
-        var context = input?.Context ?? _executor.CaptureContext(Environment.TickCount64 + _options.LocalDeadlineMilliseconds);
+        var context = input?.Context ?? _executor.CaptureContext(Environment.TickCount64 + 30_000);
         bool confirmed = route.Kind == InputKind.Confirm;
+        PendingConfirmation? pending = null;
         if (confirmed)
         {
-            var pending = _confirmation;
-            if (pending is null || Environment.TickCount64 > pending.ExpiresAt) return "No command is waiting for confirmation.";
-            if (NavigationParser.Parse(pending.Text, _config) is { Target.Length: 0 } && context.Foreground != pending.Context.Foreground)
-            {
-                _confirmation = null;
-                ShowOutputPanel("Command cancelled", "The active window changed. Repeat the command in the intended window.");
-                return "The active window changed.";
-            }
-            context = pending.Context with { ExpiresAt = context.ExpiresAt };
-            route = new(InputKind.Local, pending.Text, true);
+            pending = _confirmation;
+            if (pending is null || Environment.TickCount64 > pending.ExpiresAt)
+                return "No command is waiting for confirmation.";
+            _confirmation = null;
         }
-        if (_busy || route.Addressed || typed) CancelCurrent(closeConversation: false, clearPending: route.Kind != InputKind.Local);
+        if (!confirmed) _confirmation = null;
+        if (_busy || route.Addressed || typed) CancelCurrent(closeConversation: false, clearPending: pending is null);
         if (route.Addressed) _conversationUntil = Environment.TickCount64 + _options.FollowUpSeconds * 1000L;
         using var turn = _turns.Begin(token);
         _commands?.InvalidatePendingInput();
@@ -186,37 +180,37 @@ public partial class MainWindow : Window
                 limit.CancelAfter(2000);
                 result = (await _preferences.ReadAsync(limit.Token)).WakeGreeting();
             }
-            else if (route.Kind == InputKind.Local)
+            else if (confirmed && pending is not null)
             {
-                context.EnsureFresh();
-                var request = NavigationParser.Parse(route.Text, _config);
-                if (!typed && !confirmed && _options.RequiresVoiceConfirmation(request, input?.NeedsConfirmation == true))
+                using var local = CancellationTokenSource.CreateLinkedTokenSource(turn.Token);
+                local.CancelAfter(TimeSpan.FromSeconds(15));
+                using var scope = _executor.UseContext(pending.Context with
+                    { ExpiresAt = Environment.TickCount64 + 30_000 });
+                result = await _navigation.TryHandleAsync(pending.Phrase, local.Token).WaitAsync(local.Token)
+                    ?? "I couldn't execute that confirmed command.";
+                _navigation.CancelPending();
+                turn.EnsureCurrent();
+            }
+            else
+            {
+                var toolContext = context with { ExpiresAt = Environment.TickCount64 + 30_000 };
+                bool uncertain = input?.NeedsConfirmation == true;
+                using var api = CancellationTokenSource.CreateLinkedTokenSource(turn.Token);
+                api.CancelAfter(TimeSpan.FromSeconds(60));
+                var answer = await _assistant.RunAgentAsync(
+                    route.Text,
+                    DesktopTools.Definitions,
+                    (call, callToken) => ExecuteToolAsync(call, toolContext, uncertain, callToken),
+                    api.Token).WaitAsync(api.Token);
+                turn.EnsureCurrent();
+                if (_confirmation is { } required)
                 {
-                    _confirmation = new(route.Text, context, Environment.TickCount64 + _options.ConfirmationSeconds * 1000L);
-                    result = "I heard: " + route.Text + ".\nSay ‘Friday, confirm’ to execute, or ‘Friday, cancel’ to discard.";
+                    result = "I heard: " + required.Phrase +
+                        ".\nSay ‘Friday, confirm’ to execute, or ‘Friday, cancel’ to discard.";
                     ShowOutputPanel("Confirm voice command", result);
                     await SpeakAsync("Please confirm the command shown in the panel.", turn);
                     return result;
                 }
-                using var local = CancellationTokenSource.CreateLinkedTokenSource(turn.Token);
-                local.CancelAfter(TimeSpan.FromMilliseconds(Math.Max(1, context.ExpiresAt - Environment.TickCount64)));
-                using var scope = _executor.UseContext(context);
-                result = await _navigation.TryHandleAsync(route.Text, local.Token).WaitAsync(local.Token)
-                    ?? "I couldn't match that local command. Nothing was executed.";
-                turn.EnsureCurrent();
-                if (_navigation.IsAwaitingChoice)
-                {
-                    ShowOutputPanel("Choose an application", result);
-                    await SpeakAsync("Which application do you mean? The choices are in the panel.", turn);
-                    return result;
-                }
-            }
-            else
-            {
-                using var api = CancellationTokenSource.CreateLinkedTokenSource(turn.Token);
-                api.CancelAfter(TimeSpan.FromSeconds(30));
-                var answer = await _assistant.ReplyAsync(route.Text, api.Token).WaitAsync(api.Token);
-                turn.EnsureCurrent();
                 result = answer.Text;
             }
             turn.EnsureCurrent();
@@ -232,7 +226,7 @@ public partial class MainWindow : Window
             if (!turn.IsCurrent) throw;
             if (turn.IsCurrent)
             {
-                result = route.Kind == InputKind.Local ? "Command expired. Please repeat it." : "The request timed out. Please try again.";
+                result = "The request timed out or was stopped. Please try again.";
                 ShowOutputPanel("FRIDAY", result);
             }
             return result;
@@ -241,7 +235,9 @@ public partial class MainWindow : Window
         {
             if (turn.IsCurrent)
             {
-                result = error is HttpRequestException ? "Cannot reach the AI service. Local commands still work." : error.Message;
+                result = error is HttpRequestException
+                    ? "Cannot reach the AI service. Desktop control is unavailable until the connection returns."
+                    : error.Message;
                 ShowOutputPanel("FRIDAY", result);
             }
             return result;
@@ -257,6 +253,36 @@ public partial class MainWindow : Window
                 UpdateState();
             }
         }
+    }
+
+    // Executes one model tool call. The model decides what to do; this method
+    // validates the action, applies confirmation policy and runs it locally.
+    private async Task<string> ExecuteToolAsync(AiToolCall call, NavigationCommandContext context,
+        bool uncertain, CancellationToken token)
+    {
+        using var scope = _executor.UseContext(context);
+        if (call.Name == "list_installed_apps")
+        {
+            var targets = await _executor.ListTargetsAsync(false, token);
+            string names = string.Join(", ", targets.Select(t => t.Name)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase)
+                .Take(150));
+            return "Available applications and settings: " + names;
+        }
+        string? phrase = DesktopTools.ToPhrase(call.Name, call.ArgumentsJson);
+        if (phrase is null) return "Unsupported tool request or invalid arguments.";
+        var request = NavigationParser.Parse(phrase, _config);
+        if (request is null) return "The request could not be mapped to a supported desktop action.";
+        if (_options.RequiresVoiceConfirmation(request, uncertain))
+        {
+            _confirmation = new(phrase, context,
+                Environment.TickCount64 + _options.ConfirmationSeconds * 1000L);
+            return "CONFIRMATION_REQUIRED: the user must say 'Friday, confirm' before this action runs. Do not say it ran.";
+        }
+        string? reply = await _navigation.TryHandleAsync(phrase, token);
+        _navigation.CancelPending();
+        return reply ?? "The desktop action could not be executed.";
     }
 
     private async Task SpeakAsync(string text, TurnCoordinator.Turn turn)
@@ -291,14 +317,14 @@ public partial class MainWindow : Window
     {
         if (_closing) return;
         _commands?.SetMode(_ready && !_paused && !_busy,
-            Conversing && _confirmation is null && !_navigation.IsAwaitingChoice);
+            Conversing && _confirmation is null);
         PauseIcon.Visibility = _paused ? Visibility.Collapsed : Visibility.Visible;
         ResumeIcon.Visibility = _paused ? Visibility.Visible : Visibility.Collapsed;
         PauseButton.ToolTip = _paused ? "Resume FRIDAY" : "Pause FRIDAY";
         ToolTip = _paused ? "FRIDAY paused." : _busy ? "Working. Say Friday, wait or tap to interrupt."
             : !_ready ? "Voice starting/unavailable. Ctrl+Shift+P opens typed chat."
             : Conversing ? "Listening for your next question…"
-            : "Ready: local commands directly; Hey Friday for questions.";
+            : "Ready: say a command, or Hey Friday for a question.";
     }
     private void PauseButton_Click(object sender, RoutedEventArgs e)
     {

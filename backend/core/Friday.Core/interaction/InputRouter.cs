@@ -2,10 +2,10 @@ using Friday.Core.Navigation;
 
 namespace Friday.Core.Interaction;
 
-public enum InputKind { Ignore, Wake, Interrupt, Confirm, Local, Question }
+public enum InputKind { Ignore, Wake, Interrupt, Confirm, Question }
 public sealed record RoutedInput(InputKind Kind, string Text, bool Addressed);
 
-public sealed class InputRouter(NavigationConfiguration navigation, InteractionOptions options)
+public sealed class InputRouter(InteractionOptions options)
 {
     public RoutedInput Route(string text, bool typed, bool conversation, bool busy)
     {
@@ -25,8 +25,8 @@ public sealed class InputRouter(NavigationConfiguration navigation, InteractionO
         if (options.InterruptRequests.Any(p => NavigationParser.Normalize(p) == key))
             return busy ? new(InputKind.Interrupt, "", addressed) : new(InputKind.Ignore, "", addressed);
         if (busy && !typed && !addressed) return new(InputKind.Ignore, "", false);
-        if (NavigationParser.Parse(request, navigation) is not null)
-            return new(InputKind.Local, request, addressed);
+        // Every command, including desktop navigation, is interpreted by the
+        // AI agent. Only interruption and confirmation stay local.
         return new(typed || addressed || conversation ? InputKind.Question : InputKind.Ignore, request, addressed);
     }
 

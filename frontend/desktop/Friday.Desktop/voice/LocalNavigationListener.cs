@@ -53,7 +53,7 @@ public sealed class LocalNavigationListener : IDisposable
         InteractionOptions options, Func<NavigationCommandContext> captureContext)
     {
         _config = config; _targets = targets; _options = options;
-        _captureContext = captureContext; _router = new(config, options);
+        _captureContext = captureContext; _router = new(options);
     }
 
     public void SetMode(bool normalInput, bool conversation)
